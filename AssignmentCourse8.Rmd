@@ -1,0 +1,136 @@
+---
+title: "AssignmentCourse8"
+author: "Saurabh Singh"
+date: "7/5/2020"
+output: html_document
+---
+
+## Summary
+This document is the final report of the peer assessment project from
+machine learning course, which is a part of data science specialization.
+The purpose of this analysis is to predict the manner in which the six
+participants performed the excercises described below and to answer the 
+questions of associated course quiz. The machine leanring algorithm, which
+uses the classe variable in training set, is applied to the 20 test cases 
+availabe in the test data.
+
+## Introduction
+Devices such as Jawbone Up, Nike FuelBand, and Fitbit can enable collecting a 
+large amount of data about someone’s physical activity. These devices are used 
+by the enthusiasts who take measurements about themselves regularly to improve 
+their health, to find patterns in their behavior, or because they are tech geeks. 
+However, even though these enthusiasts regularly quantify how much of a 
+particular activity they do, they rarely quantify how well they do it. In this 
+project, the goal is to use data from accelerometers on the belt, forearm, arm, 
+and dumbell of six participants. They were asked to perform barbell lifts 
+correctly and incorrectly in five different ways.
+
+```{r include=FALSE}
+library(dplyr)
+library(caret)
+library(corrplot)
+```
+
+Load the training and test datasets
+```{r loaddata}
+data_train <- read.csv("pml-training.csv", na.strings = c("NA", ""))
+data_quiz <- read.csv("pml-testing.csv", na.strings = c("NA", ""))
+```
+
+Create two partitions (75% and 25%) using the original training dataset
+```{r partitions}
+in_train  <- createDataPartition(data_train$classe, p=0.75, list=FALSE)
+train_set <- data_train[ in_train, ]
+test_set  <- data_train[-in_train, ]
+```
+
+The two datasets (train_set and test_set) have a large number of NA values variables.
+columns with >20% NAs will be removed.
+```{r removecols}
+missingFrac <- colSums(is.na(train_set))/dim(train_set)[1]
+selectCols <- names(missingFrac)[missingFrac<.2]
+train_set <- train_set[ , selectCols]
+test_set  <- test_set [ , selectCols]
+```
+
+Columns with near zero variation will also be removed from both the train and
+the test datasets
+```{r nzv}
+nzv_var <- nearZeroVar(train_set)
+train_set <- train_set[ , -nzv_var]
+test_set  <- test_set [ , -nzv_var]
+```
+
+It appears that columns 1 to 5 are just for identification. Therefore,
+these columns will also be removed
+```{r firstfivecols}
+train_set <- train_set[ , -(1:5)]
+test_set  <- test_set [ , -(1:5)]
+```
+
+## Correlation Analysis
+Correlation analysis is perromed to before the modeling work for exploratory
+data analysis purpose. 
+```{r corranalysis}
+corr_matrix <- cor(train_set[ , -54])
+corrplot(corr_matrix, order = "FPC", method = "circle", type = "lower",
+         tl.cex = 0.6, tl.col = rgb(0, 0, 0))
+```
+There are only a few variables, which exhibit very high correlations. Note that
+high correlation is indicated by dark blue or red colors. To reduce the number
+of variables principal componenet analysis (PCA) can be performed. However, there
+are only a few strong correlations among the input variables, we will not perform
+PCA. 
+
+## Prediction Models
+### Linear Discriminant Analysis (LDA) Model
+Train lda model on train_set, and predictions perfomed for test_set.
+Confusion matrix was then generated using test_set.
+```{r lda, cache=TRUE, message=FALSE, warning=FALSE}
+set.seed(125)
+modelFit_lda <- train(classe ~ ., method="lda", data=train_set)
+pred_lda <- predict(modelFit_lda, newdata = test_set)
+conf_matrix_lda <- confusionMatrix(pred_lda, test_set$classe)
+conf_matrix_lda
+```
+The predictive accuracy of LDA model is relatively low at 71.7%
+
+### Generalized Boosted Model (GBM)
+```{r GBM1, cache=TRUE, message=FALSE, warning=FALSE}
+set.seed(125)
+ctrl_GBM <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+fit_GBM  <- train(classe ~ ., data = train_set, method = "gbm",
+                  trControl = ctrl_GBM, verbose = FALSE)
+fit_GBM$finalModel
+```
+Predictions on the GBM test_set.
+```{r, dependson="GBM1"}
+predict_GBM <- predict(fit_GBM, newdata = test_set)
+conf_matrix_GBM <- confusionMatrix(predict_GBM, test_set$classe)
+conf_matrix_GBM
+```
+The predictive accuracy of the GBM is relatively high at 98.9%
+
+### Random Forest Model
+```{r RF1, cache=TRUE, message=FALSE, warning=FALSE}
+set.seed(125)
+ctrl_RF <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+fit_RF  <- train(classe ~ ., data = train_set, method = "rf",
+                  trControl = ctrl_RF, verbose = FALSE)
+fit_RF$finalModel
+```
+Predictions of the random forest model on test_set.
+```{r, dependson="RF1"}
+predict_RF <- predict(fit_RF, newdata = test_set)
+conf_matrix_RF <- confusionMatrix(predict_RF, test_set$classe)
+conf_matrix_RF
+```
+The prediction accuracy of Random Forest model is 99.9%
+
+### Applying the best predictive model (i.e. Random Forest) to the Test Data
+The Random Forest model is selected and applied to make predictions on the
+twenty data points from the original testing data set (data_quiz)
+```{r quiz}
+predict_quiz <- predict(fit_RF, data_quiz)
+predict_quiz
+```
